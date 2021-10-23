@@ -14,78 +14,80 @@ public abstract class Sprite
 
 	protected Pen _pen;
 	
-	public Sprite(float x_pos, float y_pos, float x_size, float y_size, Color color = Black, float pen_width = 1f)
+	public Sprite(float x_pos, float y_pos, float x_size, float y_size, float pen_width = 1f)
 	{
 		_x_pos = x_pos;
 		_y_pos = y_pos;
 		_x_size = x_size;
 		_y_size = y_size;
-		_pen = new Pen(color, pen_width)		
+		_pen = new Pen(Color.Black, pen_width);		
 	}
 	
 	public virtual void Draw(object sender, PaintEventArgs e)
 	{
-		var g = e.Graphics;
-		g.DrawEllipse(_pen, _x_pos/100f * g.DpiX, _y_pos/100f * g.DpiY, _x_size/100f * g.DpiX, _y_size/100 * g.DpiY);
+		e.Graphics.DrawEllipse(_pen, _x_pos/100f * ((PictureBox)sender).Size.Width, _y_pos/100f * ((PictureBox)sender).Size.Height, _x_size/100f * ((PictureBox)sender).Size.Width, _y_size/100 * ((PictureBox)sender).Size.Height);
 	}	
 }
 
-public class Ball : Sprite
+public class Plane : Sprite
 {
 	private float _x_speed;
-	private float _y_speed;
-	private float _y_target;
+	private float _x_target;
+
+	private int _turbulence;
 	
-	private bool IsBasketReached = false;
+	private bool _isTargetReached = false;
 	
-	private const float _d_x = 0;
-	private const float _d_y = 0.02f;
-	private const float _d_air = 0.98f;
-	
-	public delegate void Delegate;
-	public event Delegate BasketReached;
+	public delegate void Delegate();
+	public event Delegate TargetReached;
 	public event Delegate EdgeReached;
 	
-	public Ball(float x_pos, float y_pos, float x_size, float y_size, float x_speed, float y_speed, float y_target, Color color = Black, float pen_width = 10f)
-	 : base(x_pos, y_pos, x_size, y_size, color, pen_width)
+	public Plane(float x_pos, float y_pos, float x_size, float y_size, float x_speed, float x_target, float pen_width = 10f)
+	 : base(x_pos, y_pos, x_size, y_size, pen_width)
 	{
 		_x_speed = x_speed;
-		_y_speed = y_speed;
-		_y_target = y_target;	
+		_x_target = x_target;
+		_turbulence = -1;	
 	}
 	
 	private void Change()
 	{
 		_x_pos += _x_speed;
-		_y_pos += _y_speed;
-		
-		_x_speed += _d_x;
-		_y_speed += _d_y;
-		
-		_x_speed *= _d_air;
-		_y_speed *= _d_air;
+		_y_pos += _turbulence;
+		_turbulence *= -1
 	}
 	
 	public override void Draw(object sender, PaintEventArgs e)
 	{
-		var g = e.Graphics;
-		if(!IsBasketReached && _y_pos >= _y_target)
+		if(!_isTargetReached && _x_pos >= _x_target)
 		{
-			this.BasketReached(); 
+			this.TargetReached();
+			_isTargetReached = true; 
 		}
 		if(_y_pos > 105f)
 		{
 			this.EdgeReached();
 		}
-		g.FillEllipse(_pen, _x_pos/100f * g.DpiX, _y_pos/100f * g.DpiY, 10, 10);
+		e.Graphics.DrawEllipse(_pen, _x_pos/100f * ((PictureBox)sender).Size.Width, _y_pos/100f * ((PictureBox)sender).Size.Height, 10, 10);
 		Change();
 	}
 }
 
-public class Basket : Sprite
+public class Bomb : Sprite 
 {
-	public Basket(float x_pos, float y_pos, float x_size = 10f, float y_size = 5f, Color color = Black, float pen_width = 1f)
-	 : base(x_pos, y_pos, x_size, y_size, color, pen_width){}
+	
+}
+
+public class Target : Sprite
+{
+	public void Hit()
+	(
+		_pen = Color.Red;
+	)
+	public override void Draw(object sender, PaintEventArgs e)
+	{
+		e.Graphics.DrawRectangle(_pen, _x_pos/100f * ((PictureBox)sender).Size.Width, _y_pos/100f * ((PictureBox)sender).Size.Height, _x_size/100f * ((PictureBox)sender).Size.Width, _y_size/100 * ((PictureBox)sender).Size.Height);
+	}
 }
 
 public class MyForm : Form
@@ -94,7 +96,11 @@ public class MyForm : Form
 	protected Button _rightScore_btn;
 	protected Graphics _main_graphics;
 	protected PictureBox _main_pb;
-
+	
+	private Ball _ball;
+	private Basket left_basket;
+	private Basket right_basket;
+	private Thread _screen_update_thread;
 	private bool _ball_is_tossed;
 
 	public MyForm()
@@ -120,13 +126,22 @@ public class MyForm : Form
 		_leftScore_btn.Click += MakeToss; // подписка на события
 		_rightScore_btn.Click += MakeToss;
 		this.Resize += ResizePictureBox;
+		this.Closing += Finisher;
 		
 		this.Controls.Add(_leftScore_btn); // добавление компонентов
 		this.Controls.Add(_main_pb);
 		this.Controls.Add(_rightScore_btn);
 		
-		Basket left
+		_screen_update_thread = new Thread(new ThreadStart(Tick));
 		
+		_screen_update_thread.Start();
+		
+		Basket left_basket = new Basket(90f, 60f);
+		Basket right_basket = new Basket(0f, 60f);
+		
+		
+		_main_pb.Paint += left_basket.Draw;
+		_main_pb.Paint += right_basket.Draw;
 	}
 
 	private void ResizePictureBox(object sender, EventArgs e)
@@ -136,54 +151,41 @@ public class MyForm : Form
 	
 	private void Tick()
 	{
-		while(true)
+		for(;;)
 		{
 			_main_pb.Invalidate();
-			Thread.Sleep(50);
+			Thread.Sleep(5);
 		}	
 	}
-	private async void MakeToss(object sender, EventArgs e)
+	private void Finisher(object sender, EventArgs e)
+	{
+		_screen_update_thread.Abort();
+	}
+	private void MakeToss(object sender, EventArgs e)
 	{
 		if(!_ball_is_tossed) // кидается ли мяч?
 		{
 			_ball_is_tossed = true; // если нет, то кинуть
-			await Task.Run(() => // ожидание, пока произойдёт бросок
-			{
-				float x_distance = 0.0f;
-				float y_distance = 38.0f; // позиция мяча в пространстве в процентах
+			if((Button)sender == _rightScore_btn)
+				_ball = new Ball(0f, 38f, 0, 0, 0.8f, -1.2f, 60f);
+			else
+				_ball = new Ball(100f, 38f, 0, 0, -0.8f, -1.2f, 60f);
 				
-				float x_speed = 0.8f;
-				float y_speed = -1.2f; // скорость мяча в процентах в отрисовку
-
-				bool IsIncremented = false; // был ли увеличен счёт?
-
-				while(y_distance < 100f && x_distance < 100f) //отрисовка пока мяч не вышел за пределы экрана
-				{
-					_main_pb.Invalidate();//_main_graphics.Clear(this.BackColor); // отчистка фона
-					_main_graphics.DrawEllipse(new Pen(Color.Black, 1f), 0.9f * _main_pb.Size.Width, 0.6f * _main_pb.Size.Height, 0.1f * _main_pb.Size.Width, 0.05f * _main_pb.Size.Height);// отрисовка кольца	
-					_main_graphics.DrawEllipse(new Pen(Color.Black, 10f), x_distance/100f * _main_pb.Size.Width, y_distance/100f * _main_pb.Size.Height, 10, 10);// отрисовка мяча
-
-					if(x_distance >= 95f && !IsIncremented)// если расстояние до корзины пройдено и если счёт не увеличивался
-					{
-						((Button)sender).Text = (Int32.Parse(((Button)sender).Text) + 1).ToString(); // увеличение счёта
-						IsIncremented = true; // счёт был увеличен
-					}
-
-					x_distance += x_speed; // мяч передвинут
-					y_distance += y_speed;
-					Thread.Sleep(5);// поток спит, межну отрисовками
-					y_speed += 0.02f;// сила притяжения
-
-					y_speed *= 0.998f;// сопротивление воздуха
-					x_speed *= 0.998f;
-				}
-				_main_pb.Invalidate();
-				_main_graphics.DrawEllipse(new Pen(Color.Black, 1f), 0.9f * _main_pb.Size.Width, 0.6f * _main_pb.Size.Height, 0.1f * _main_pb.Size.Width, 0.05f * _main_pb.Size.Height);//финальная отрисовка кольца
-			});
-			_ball_is_tossed = false;// закончили кидать
+			_ball.IncBtn = (Button)sender;
+			_main_pb.Paint += _ball.Draw;
+			_ball.BasketReached += BasketReached;
+			_ball.EdgeReached += EndOfScreenReached;
 		}
 	}
-
+	private void BasketReached()
+	{
+		_ball.IncBtn.Text = (Int32.Parse(_ball.IncBtn.Text) + 1).ToString();
+	}
+	private void EndOfScreenReached()
+	{
+		_main_pb.Paint -= _ball.Draw;
+		_ball_is_tossed = false;// закончили кидать	
+	}
 }
 
 public class Program
